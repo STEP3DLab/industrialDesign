@@ -8,6 +8,8 @@ function check($ok, $message) { if (!$ok) throw new RuntimeException($message); 
 $c = $DB->get_record('course', ['idnumber' => 'RSSU-DM-2026'], '*', MUST_EXIST);
 $ctx = context_course::instance($c->id);
 check($c->enablecompletion == 1, 'Completion missing');
+check(file_exists($CFG->dataroot . '/lang/ru/moodle.php'), 'Russian language pack');
+check(get_config('backup', 'backup_auto_max_kept') == 5, 'Backup retention');
 check($DB->count_records('course_sections', ['course' => $c->id]) === 8, 'Sections');
 check($DB->count_records('event', ['courseid' => $c->id, 'eventtype' => 'course']) === 30, 'Calendar event count');
 check($DB->count_records('assign', ['course' => $c->id]) === 5, 'Assignment count');

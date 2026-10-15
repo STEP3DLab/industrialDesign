@@ -2,6 +2,7 @@
 // Seeds a fresh site once; later executions preserve all teacher edits and learner data.
 define('CLI_SCRIPT', true);
 require('/var/www/html/config.php');
+if (getenv('CI') === '1') { $CFG->debug = DEBUG_DEVELOPER; $CFG->debugdisplay = 1; }
 require_once($CFG->dirroot . '/course/lib.php');
 require_once($CFG->dirroot . '/course/modlib.php');
 require_once($CFG->libdir . '/completionlib.php');
@@ -21,9 +22,9 @@ $transaction = $DB->start_delegated_transaction();
 foreach (['lang' => 'ru', 'timezone' => 'Europe/Moscow', 'forcetimezone' => 'Europe/Moscow',
     'enablecompletion' => 1, 'enableavailability' => 1, 'forcelogin' => 1, 'guestloginbutton' => 0,
     'registerauth' => '', 'auth' => 'manual', 'theme' => 'boost', 'defaulthomepage' => 1,
-    'custommenuitems' => "Лаборатория|/local/technopark/index.php", 'sessiontimeout' => 7200,
-    'backup_auto_active' => 1, 'backup_auto_weekdays' => '1111111', 'backup_auto_hour' => 3,
-    'backup_auto_minute' => 15] as $k => $v) set_config($k, $v);
+    'custommenuitems' => "Лаборатория|/local/technopark/index.php", 'sessiontimeout' => 7200] as $k => $v) set_config($k, $v);
+foreach (['backup_auto_active' => 1, 'backup_auto_weekdays' => '1111111', 'backup_auto_hour' => 3,
+    'backup_auto_minute' => 15, 'backup_auto_max_kept' => 5] as $k => $v) set_config($k, $v, 'backup');
 set_config('enabled_stores', 'logstore_standard', 'tool_log');
 set_config('loglifetime', 365 * DAYSECS, 'logstore_standard');
 set_config('scsspre', '$primary: #183b75;', 'theme_boost');
@@ -33,7 +34,8 @@ $site->fullname = 'СДО лаборатории промышленного ди
 $site->shortname = 'СКБ · Цифровая метрология';
 $site->summary = '<p>Лаборатория промышленного дизайна и инжиниринга СКБ Технопарка РГСУ.</p><p><a href="' . $CFG->wwwroot . '/local/technopark/index.php">Открыть учебный портал →</a></p>';
 $site->summaryformat = FORMAT_HTML;
-update_course($site);
+$DB->update_record('course', $site);
+rebuild_course_cache(SITEID, true);
 $category = core_course_category::create(['name' => 'СКБ Технопарка РГСУ', 'idnumber' => 'RSSU-LAB']);
 $tz = new DateTimeZone('Europe/Moscow');
 $course = create_course((object)[
