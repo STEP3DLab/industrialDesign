@@ -1,0 +1,85 @@
+name: rssu-metrology
+x-moodle: &moodle
+  image: rssu-metrology:local
+  build: .
+  environment: &env
+    MOODLE_URL: ${MOODLE_URL:-http://localhost:8080}
+    MOODLE_SSL_PROXY: ${MOODLE_SSL_PROXY:-0}
+    MOODLE_DB_PASSWORD_FILE: /run/secrets/db_password
+    MOODLE_UPGRADE_KEY_FILE: /run/secrets/upgrade_key
+    LAB_ADMIN_USER: ${LAB_ADMIN_USER:-labadmin}
+    LAB_ADMIN_EMAIL: ${LAB_ADMIN_EMAIL:-admin@example.invalid}
+    LAB_SITE_NAME: СДО лаборатории промышленного дизайна и инжиниринга — СКБ Технопарка РГСУ
+    TZ: Europe/Moscow
+  volumes:
+    - moodledata:/var/moodledata
+  secrets:
+    - db_password
+    - upgrade_key
+  depends_on:
+    db:
+      condition: service_healthy
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: moodle
+      POSTGRES_USER: moodle
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes: [database:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U moodle -d moodle']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  web:
+    <<: *moodle
+    restart: unless-stopped
+    ports: ['127.0.0.1:${MOODLE_PORT:-8080}:80']
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS http://127.0.0.1/login/index.php >/dev/null']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+  cron:
+    <<: *moodle
+    user: www-data
+    restart: unless-stopped
+    command: ['/opt/lab/scripts/cron.sh']
+  setup:
+    <<: *moodle
+    profiles: [setup]
+    user: www-data
+    environment:
+      <<: *env
+      LAB_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+    secrets: [db_password, upgrade_key, admin_password]
+    command: [php, -d, disable_functions=cli_set_process_title, /opt/lab/scripts/install.php]
+  https:
+    image: caddy:2-alpine
+    profiles: [production]
+    restart: unless-stopped
+    environment:
+      LMS_HOST: ${LMS_HOST:-localhost}
+      ACME_EMAIL: ${LAB_ADMIN_EMAIL:-admin@example.invalid}
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  admin_password:
+    file: ./secrets/admin_password
+  upgrade_key:
+    file: ./secrets/upgrade_key
+volumes:
+  database:
+  moodledata:
+  caddy_data:
+  caddy_config:

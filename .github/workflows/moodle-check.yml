@@ -1,0 +1,44 @@
+name: Moodle installation and course checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: moodle-check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare isolated secrets
+        run: bash scripts/init.sh
+      - name: Validate deployment definition
+        run: docker compose config --quiet
+      - name: Build Moodle 4.5.15
+        run: docker compose build
+      - name: PHP syntax
+        run: docker compose run --rm --no-deps web sh -c 'find /opt/lab/scripts /var/www/html/local/technopark -name "*.php" -exec php -l {} \;'
+      - name: Install database and seed course
+        run: |
+          docker compose up -d db
+          docker compose --profile setup run --rm setup
+          docker compose run --rm --user www-data web php /opt/lab/scripts/seed.php
+          docker compose run --rm --user www-data web php /opt/lab/scripts/seed.php
+      - name: Course and permission checks
+        run: docker compose run --rm --user www-data -e CI=1 -v "$PWD/tests:/opt/tests:ro" web php /opt/tests/smoke.php
+      - name: HTTP login and access checks
+        run: |
+          docker compose up -d web cron
+          for i in $(seq 1 30); do curl -fsS http://localhost:8080/login/index.php >/dev/null && break; sleep 2; done
+          python3 tests/http_smoke.py
+      - name: Diagnostics on failure
+        if: failure()
+        run: docker compose logs --tail=100 web cron db
+      - name: Stop ephemeral environment
+        if: always()
+        run: docker compose down -v
